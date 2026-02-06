@@ -358,12 +358,144 @@ class VolumeRenderer {
         
         const [width, height, depth] = volumeData.dimensions;
         
+        console.log(`Loading volume: ${width} x ${height} x ${depth}, total data points: ${volumeData.data.length}`);
+        
+        // Validate dimensions against data length
+        const expectedSize = width * height * depth;
+        if (volumeData.data.length !== expectedSize) {
+            console.warn(`Data size mismatch: expected ${expectedSize}, got ${volumeData.data.length}`);
+            
+            // Try to fix by calculating actual dimensions
+            if (volumeData.data.length > 0) {
+                // For a CT scan, we typically have many slices of equal size
+                // Let's try to guess dimensions by finding factors
+                
+                // If we have a likely number of slices
+                const likelySlices = depth; // Use provided depth as hint
+                const likelySliceSize = Math.floor(volumeData.data.length / likelySlices);
+                
+                // Find factors of slice size that are reasonable for CT images
+                let foundFactors = false;
+                let actualWidth = width, actualHeight = height;
+                
+                // Try common CT dimensions
+                const commonDims = [64, 128, 256, 512, 1024];
+                for (const dim of commonDims) {
+                    if (likelySliceSize % dim === 0) {
+                        const otherDim = likelySliceSize / dim;
+                        if (commonDims.includes(otherDim)) {
+                            actualWidth = dim;
+                            actualHeight = otherDim;
+                            foundFactors = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!foundFactors) {
+                    // Try square dimensions
+                    const sqrt = Math.sqrt(likelySliceSize);
+                    if (Number.isInteger(sqrt)) {
+                        actualWidth = sqrt;
+                        actualHeight = sqrt;
+                        foundFactors = true;
+                    }
+                }
+                
+                if (foundFactors) {
+                    console.log(`Adjusted dimensions: ${actualWidth} x ${actualHeight} x ${likelySlices}`);
+                    
+                    // Update dimensions
+                    const newWidth = actualWidth;
+                    const newHeight = actualHeight;
+                    const newDepth = Math.floor(volumeData.data.length / (newWidth * newHeight));
+                    
+                    console.log(`Final adjusted dimensions: ${newWidth} x ${newHeight} x ${newDepth}`);
+                    
+                    // Recalculate with corrected dimensions
+                    const slicesPerRow = Math.ceil(Math.sqrt(newDepth));
+                    const rows = Math.ceil(newDepth / slicesPerRow);
+                    
+                    const texWidth = slicesPerRow * newWidth;
+                    const texHeight = rows * newHeight;
+                    
+                    console.log(`Texture size: ${texWidth} x ${texHeight} (slices per row: ${slicesPerRow})`);
+                    
+                    // Create texture data
+                    const textureData = new Uint8Array(texWidth * texHeight);
+                    
+                    // Fill texture data with actual available data
+                    for (let z = 0; z < newDepth; z++) {
+                        const sliceRow = Math.floor(z / slicesPerRow);
+                        const sliceCol = z % slicesPerRow;
+                        
+                        for (let y = 0; y < newHeight; y++) {
+                            for (let x = 0; x < newWidth; x++) {
+                                const volumeIdx = z * newWidth * newHeight + y * newWidth + x;
+                                
+                                // Check if we have data for this index
+                                if (volumeIdx < volumeData.data.length) {
+                                    const texX = sliceCol * newWidth + x;
+                                    const texY = sliceRow * newHeight + y;
+                                    const texIdx = texY * texWidth + texX;
+                                    
+                                    // Ensure we don't go out of bounds
+                                    if (texIdx < textureData.length) {
+                                        textureData[texIdx] = Math.max(0, Math.min(255, Math.round(volumeData.data[volumeIdx])));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Ensure we have a valid texture
+                    if (!this.volumeTexture) {
+                        this.volumeTexture = this.gl.createTexture();
+                    }
+                    
+                    // Upload texture - bind texture before setting parameters
+                    this.gl.bindTexture(this.gl.TEXTURE_2D, this.volumeTexture);
+                    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+                    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+                    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+                    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+                    
+                    this.gl.texImage2D(
+                        this.gl.TEXTURE_2D,
+                        0,
+                        this.gl.LUMINANCE,
+                        texWidth,
+                        texHeight,
+                        0,
+                        this.gl.LUMINANCE,
+                        this.gl.UNSIGNED_BYTE,
+                        textureData
+                    );
+                    
+                    // Unbind texture after uploading
+                    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+                    
+                    this.textureLayout = {
+                        width: texWidth,
+                        height: texHeight,
+                        slices: newDepth,
+                        volumeSize: [newWidth, newHeight, newDepth]
+                    };
+                    
+                    return; // Exit early after fixing dimensions
+                }
+            }
+        }
+        
+        // Original logic for when dimensions match
         // Calculate texture layout
         const slicesPerRow = Math.ceil(Math.sqrt(depth));
         const rows = Math.ceil(depth / slicesPerRow);
         
         const texWidth = slicesPerRow * width;
         const texHeight = rows * height;
+        
+        console.log(`Original texture size: ${texWidth} x ${texHeight} (slices per row: ${slicesPerRow})`);
         
         // Create texture data
         const textureData = new Uint8Array(texWidth * texHeight);
@@ -380,7 +512,10 @@ class VolumeRenderer {
                     const texY = sliceRow * height + y;
                     const texIdx = texY * texWidth + texX;
                     
-                    textureData[texIdx] = Math.max(0, Math.min(255, Math.round(volumeData.data[volumeIdx])));
+                    // Ensure we don't go out of bounds
+                    if (volumeIdx < volumeData.data.length && texIdx < textureData.length) {
+                        textureData[texIdx] = Math.max(0, Math.min(255, Math.round(volumeData.data[volumeIdx])));
+                    }
                 }
             }
         }
