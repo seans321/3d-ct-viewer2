@@ -486,4 +486,4 @@ class VolumeRenderer {
         
         this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
     }
-}
+}// Auto-refresh to trigger GitHub Pages deployment
