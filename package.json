@@ -1,0 +1,23 @@
+{
+  "name": "3d-ct-viewer2",
+  "version": "1.0.0",
+  "description": "3D CT Volume Viewer with WebGL Raycasting",
+  "main": "index.html",
+  "scripts": {
+    "start": "http-server -o",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "dicom",
+    "medical",
+    "imaging",
+    "webgl",
+    "volume-rendering",
+    "raycasting"
+  ],
+  "author": "OpenClaw AI",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D CT Volume Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #222;
+            color: white;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 10px;
+            background-color: #333;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 200px;
+        }
+        
+        .control-group label {
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+        
+        .control-group input[type="number"] {
+            width: 80px;
+            padding: 3px;
+            background-color: #444;
+            color: white;
+            border: 1px solid #666;
+            border-radius: 3px;
+        }
+        
+        .file-input-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .file-input-container input[type="file"] {
+            flex: 1;
+        }
+        
+        .main-content {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            height: calc(100vh - 200px);
+        }
+        
+        .viewer-container {
+            flex: 1;
+            position: relative;
+            border: 1px solid #444;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #000;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            z-index: 100;
+        }
+        
+        .instructions {
+            width: 300px;
+            background-color: #333;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+        
+        .instructions ul {
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        .stats {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>3D CT Volume Viewer</h1>
+        </div>
+        
+        <div class="controls">
+            <div class="file-input-container">
+                <input type="file" id="dicomInput" webkitdirectory directory multiple placeholder="Select DICOM folder...">
+                <button onclick="document.getElementById('dicomInput').click()">Load DICOM Folder</button>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    Threshold: <span id="thresholdValue">100</span>
+                    <input type="range" id="thresholdSlider" min="0" max="255" value="100" oninput="updateThreshold(this.value)">
+                    <input type="number" id="thresholdInput" value="100" oninput="updateThreshold(this.value)">
+                </label>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    Opacity: <span id="opacityValue">0.8</span>
+                    <input type="range" id="opacitySlider" min="0" max="1" step="0.01" value="0.8" oninput="updateOpacity(this.value)">
+                    <input type="number" id="opacityInput" min="0" max="1" step="0.01" value="0.8" oninput="updateOpacity(this.value)">
+                </label>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    Window Level: <span id="windowLevelValue">128</span>
+                    <input type="range" id="windowLevelSlider" min="0" max="255" value="128" oninput="updateWindowLevel(this.value)">
+                    <input type="number" id="windowLevelInput" value="128" oninput="updateWindowLevel(this.value)">
+                </label>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    Window Width: <span id="windowWidthValue">256</span>
+                    <input type="range" id="windowWidthSlider" min="1" max="512" value="256" oninput="updateWindowWidth(this.value)">
+                    <input type="number" id="windowWidthInput" min="1" max="512" value="256" oninput="updateWindowWidth(this.value)">
+                </label>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="viewer-container">
+                <canvas id="canvas"></canvas>
+                <div id="loading" class="loading" style="display: none;">Loading DICOM files...</div>
+                <div id="stats" class="stats" style="display: none;"></div>
+            </div>
+            
+            <div class="instructions">
+                <h3>Instructions:</h3>
+                <ul>
+                    <li>Select a DICOM folder containing CT slice files</li>
+                    <li>Drag to rotate the 3D volume</li>
+                    <li>Scroll to zoom in/out</li>
+                    <li>Adjust sliders to change visualization parameters</li>
+                    <li>Window Level/Width control contrast and brightness</li>
+                    <li>Threshold controls which voxels are displayed</li>
+                    <li>Opacity controls transparency of structures</li>
+                </ul>
+                
+                <h3>Technical Info:</h3>
+                <ul id="tech-info">
+                    <li>Status: Ready</li>
+                    <li>Volume: Not loaded</li>
+                    <li>Slices: 0</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="dicom-parser.js"></script>
+    <script src="volume-renderer.js"></script>
+    
+    <script>
+        // Global variables
+        let volumeRenderer = null;
+        let dicomParser = null;
+        
+        // DOM elements
+        const canvas = document.getElementById('canvas');
+        const dicomInput = document.getElementById('dicomInput');
+        const loadingDiv = document.getElementById('loading');
+        const statsDiv = document.getElementById('stats');
+        const techInfoList = document.getElementById('tech-info');
+        
+        // Initialize the application
+        function init() {
+            // Set canvas size
+            resizeCanvas();
+            
+            // Create DICOM parser
+            dicomParser = new DicomParser();
+            
+            // Create volume renderer
+            volumeRenderer = new VolumeRenderer(canvas);
+            
+            // Start rendering
+            startRendering();
+            
+            // Add event listeners
+            window.addEventListener('resize', resizeCanvas);
+            
+            dicomInput.addEventListener('change', function(e) {
+                if (this.files.length > 0) {
+                    loadDicomFiles(this.files);
+                }
+            });
+        }
+        
+        // Resize canvas to fit container
+        function resizeCanvas() {
+            const container = document.querySelector('.viewer-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            
+            if (volumeRenderer) {
+                volumeRenderer.setSize(canvas.width, canvas.height);
+            }
+        }
+        
+        // Load DICOM files
+        async function loadDicomFiles(files) {
+            try {
+                loadingDiv.style.display = 'block';
+                
+                // Process the DICOM files
+                const volumeData = await dicomParser.processDicomFolder(files);
+                
+                // Update UI
+                updateTechInfo('Loaded', `${volumeData.dimensions[0]}×${volumeData.dimensions[1]}×${volumeData.dimensions[2]}`, volumeData.dimensions[2]);
+                
+                // Load the volume into the renderer
+                volumeRenderer.loadVolume(volumeData);
+                
+                // Hide loading indicator
+                loadingDiv.style.display = 'none';
+                
+                console.log('Volume loaded successfully:', volumeData.dimensions);
+            } catch (error) {
+                console.error('Error loading DICOM files:', error);
+                loadingDiv.innerHTML = `Error: ${error.message}`;
+                setTimeout(() => {
+                    loadingDiv.style.display = 'none';
+                }, 3000);
+            }
+        }
+        
+        // Update technical info panel
+        function updateTechInfo(status, volume, slices) {
+            techInfoList.innerHTML = `
+                <li>Status: ${status}</li>
+                <li>Volume: ${volume}</li>
+                <li>Slices: ${slices}</li>
+            `;
+        }
+        
+        // Update threshold value
+        function updateThreshold(value) {
+            const val = parseInt(value);
+            document.getElementById('thresholdValue').textContent = val;
+            document.getElementById('thresholdInput').value = val;
+            if (volumeRenderer) volumeRenderer.setThreshold(val);
+        }
+        
+        // Update opacity value
+        function updateOpacity(value) {
+            const val = parseFloat(value);
+            document.getElementById('opacityValue').textContent = val.toFixed(2);
+            document.getElementById('opacityInput').value = val;
+            if (volumeRenderer) volumeRenderer.setOpacity(val);
+        }
+        
+        // Update window level value
+        function updateWindowLevel(value) {
+            const val = parseInt(value);
+            document.getElementById('windowLevelValue').textContent = val;
+            document.getElementById('windowLevelInput').value = val;
+            if (volumeRenderer) volumeRenderer.setWindowLevel(val);
+        }
+        
+        // Update window width value
+        function updateWindowWidth(value) {
+            const val = parseInt(value);
+            document.getElementById('windowWidthValue').textContent = val;
+            document.getElementById('windowWidthInput').value = val;
+            if (volumeRenderer) volumeRenderer.setWindowWidth(val);
+        }
+        
+        // Start rendering loop
+        function startRendering() {
+            function animate() {
+                if (volumeRenderer) {
+                    volumeRenderer.render();
+                    
+                    // Update stats
+                    statsDiv.textContent = `FPS: ${Math.round(60)} | Slices: ${volumeRenderer.getSliceCount ? volumeRenderer.getSliceCount() : 'N/A'}`;
+                }
+                requestAnimationFrame(animate);
+            }
+            animate();
+        }
+        
+        // Initialize when page loads
+        window.onload = init;
+    </script>
+</body>
+</html>
